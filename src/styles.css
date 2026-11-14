@@ -18,3 +18,42 @@
 .engine-led{width:7px;height:7px;border-radius:50%;background:#d4a36b;box-shadow:0 0 8px #d4a36b66}
 .engine-led.ready{background:#65d69a;box-shadow:0 0 8px #65d69a88}
 @media(max-width:520px){.engine-level{margin-left:0;width:100%}.practice-mode-bar>.btn{flex:1}}
+
+/* Smooth chess piece movement */
+.chessboard {
+  position: relative;
+}
+
+.piece-slot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.piece-moving {
+  animation: chess-piece-slide 220ms cubic-bezier(.2, .75, .25, 1) both;
+  z-index: 3;
+}
+
+@keyframes chess-piece-slide {
+  from {
+    transform: translate(
+      calc(var(--move-x) * 100%),
+      calc(var(--move-y) * 100%)
+    );
+  }
+
+  to {
+    transform: translate(0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piece-moving {
+    animation-duration: 1ms;
+  }
+}
+

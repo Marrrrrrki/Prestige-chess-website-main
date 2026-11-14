@@ -1,6 +1,6 @@
 
 import { Chess, type Square } from "chess.js";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 
 const glyph: Record<string, string> = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
@@ -84,6 +84,22 @@ export default function Board({
     setSelected(null);
   };
 
+  const moveFromCol = lastMove
+    ? files.indexOf(lastMove.from[0] as Square)
+    : -1;
+
+  const moveFromRow = lastMove
+    ? ranks.indexOf(Number(lastMove.from[1]))
+    : -1;
+
+  const moveToCol = lastMove
+    ? files.indexOf(lastMove.to[0] as Square)
+    : -1;
+
+  const moveToRow = lastMove
+    ? ranks.indexOf(Number(lastMove.to[1]))
+    : -1;
+
   return (
     <div className="board-shell">
       <div
@@ -102,6 +118,22 @@ export default function Board({
             const isTarget = targets.includes(sq);
             const isLast =
               lastMove?.from === sq || lastMove?.to === sq;
+
+            const shouldAnimate =
+              !!p &&
+              !!lastMove &&
+              lastMove.to === sq &&
+              moveFromCol >= 0 &&
+              moveFromRow >= 0 &&
+              moveToCol >= 0 &&
+              moveToRow >= 0;
+
+            const animationStyle = shouldAnimate
+              ? ({
+                  "--move-x": moveFromCol - moveToCol,
+                  "--move-y": moveFromRow - moveToRow
+                } as CSSProperties)
+              : undefined;
 
             return (
               <button
@@ -130,11 +162,19 @@ export default function Board({
 
                 {p && (
                   <span
-                    className={`piece ${
-                      p.color === "w" ? "white-piece" : "black-piece"
+                    key={`${sq}-${game.fen()}-${lastMove?.from}-${lastMove?.to}`}
+                    className={`piece-slot ${
+                      shouldAnimate ? "piece-moving" : ""
                     }`}
+                    style={animationStyle}
                   >
-                    {glyph[p.color + p.type]}
+                    <span
+                      className={`piece ${
+                        p.color === "w" ? "white-piece" : "black-piece"
+                      }`}
+                    >
+                      {glyph[p.color + p.type]}
+                    </span>
                   </span>
                 )}
               </button>
