@@ -59,58 +59,64 @@ export default function App(){
   useEffect(()=>{if(!toast)return;const t=window.setTimeout(()=>setToast(""),2600);return()=>clearTimeout(t);},[toast]);
 
   // Stockfish runs locally in a browser worker; the page stays responsive while it thinks.
-  useEffect(()=>{
-    if(practiceMode!=="engine"){
-      engineRef.current?.terminate();
-      engineRef.current=null;
+    // PRESTIGE ENGINE runs locally using our own chess engine.
+  useEffect(() => {
+    if (practiceMode === "engine") {
+      setEngineReady(true);
+      setEngineStatus("PRESTIGE ENGINE ready");
+    } else {
       setEngineReady(false);
       setEngineThinking(false);
       setEngineStatus("Not connected");
-      return;
     }
-    setEngineReady(false);
-    setEngineThinking(false);
-    setEngineStatus("Loading Stockfish…");
-    let alive=true;
-    try{
-      const worker=new Worker(`${import.meta.env.BASE_URL}stockfish-worker.js`);
-      engineRef.current=worker;
-      worker.onmessage=(event:MessageEvent<string>)=>{
-        if(!alive)return;
-        const line=String(event.data??"");
-        if(line==="uciok"){
-          worker.postMessage("isready");
-        }else if(line==="readyok"){
-          setEngineReady(true);
-          setEngineStatus("Ready · Stockfish 19");
-        }else if(line.startsWith("bestmove ")){
-          const move=line.split(/\s+/)[1];
-          if(move&&move!=="(none)"&&move!=="0000"){
-            const from=move.slice(0,2),to=move.slice(2,4),promotion=move[4]||"q";
-            const copy=new Chess(gameRef.current.fen());
-            try{
-              const played=copy.move({from,to,promotion});
-              if(played){setGame(copy);setLastMove({from,to});}
-            }catch{/* Ignore malformed engine output rather than corrupting the game. */}
+  }, [practiceMode]);
+
+  useEffect(() => {
+    if (
+      practiceMode !== "engine" ||
+      !engineReady ||
+      engineThinking ||
+      game.turn() !== "b" ||
+      game.isGameOver()
+    ) return;
+
+    setEngineThinking(true);
+    setEngineStatus("PRESTIGE ENGINE is thinking…");
+
+    window.setTimeout(() => {
+      const current = new Chess(gameRef.current.fen());
+
+      const level =
+        engineDifficulty === "advanced" ? "master" : engineDifficulty;
+
+      const move = choosePrestigeMove(current.fen(), level);
+
+      if (move) {
+        try {
+          const played = current.move(move);
+
+          if (played) {
+            setGame(current);
+            setLastMove({
+              from: played.from,
+              to: played.to
+            });
           }
-          setEngineThinking(false);
-          setEngineStatus("Ready · Stockfish 19");
+        } catch {
+          notify("PRESTIGE ENGINE encountered an invalid move.");
         }
-      };
-      worker.onerror=()=>{
-        if(!alive)return;
-        setEngineStatus("Could not load Stockfish");
-        setEngineThinking(false);
-        setEngineReady(false);
-        notify("Stockfish couldn't load. Check your internet connection and try again.");
-      };
-      worker.postMessage("uci");
-    }catch{
-      setEngineStatus("Could not start Stockfish");
-      notify("Your browser couldn't start the Stockfish worker.");
-    }
-    return ()=>{alive=false;engineRef.current?.terminate();engineRef.current=null;};
-  },[practiceMode]);
+      }
+
+      setEngineThinking(false);
+      setEngineStatus("PRESTIGE ENGINE ready");
+    }, 150);
+  }, [
+    practiceMode,
+    engineReady,
+    engineThinking,
+    engineDifficulty,
+    game
+  ]);
 
   useEffect(()=>{
     if(practiceMode!=="engine"||!engineReady||engineThinking||game.turn()!=="b"||game.isGameOver())return;
