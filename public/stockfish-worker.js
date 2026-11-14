@@ -1,6 +1,6 @@
 
 const STOCKFISH_CDN =
-  "https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/";
+  "https://unpkg.com/stockfish@19.0.1/bin/";
 
 self.Module = {
   locateFile: (path) => STOCKFISH_CDN + path
