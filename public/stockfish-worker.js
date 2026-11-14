@@ -1,5 +1,11 @@
 
-const STOCKFISH_URL =
-  "https://unpkg.com/stockfish@19.0.1/bin/stockfish-19-asm.js";
+const STOCKFISH_CDN =
+  "https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/";
 
-importScripts(STOCKFISH_URL);
+self.Module = {
+  locateFile: (path) => STOCKFISH_CDN + path
+};
+
+importScripts(
+  STOCKFISH_CDN + "stockfish-19-lite-single.js"
+);
