@@ -92,7 +92,7 @@ export default function App(){
   useEffect(()=>{if(page==="Puzzles")puzzleSetup();},[page,puzzleIndex]);
 
   const sidebar=<>
-    <div className="brand"><div className="brand-mark"><Crown size={23}/></div><div><div className="brand-name">PRESTIGE</div><div className="brand-sub">CHESS ACADEMY</div></div></div>
+    <div className="brand"><div className="brand-mark"><img src={`${import.meta.env.BASE_URL}prestige-logo.png`} alt="PRESTIGE logo" /></div><div><div className="brand-name">PRESTIGE</div><div className="brand-sub">CHESS ACADEMY</div></div></div>
     <div className="sidebar-scroll">
       {["STUDY","PLAY","RESOURCES"].map(group=><div className="nav-group" key={group}><div className="nav-label">{group}</div>{nav.filter(n=>n.group===group).map(n=>{const Icon=n.icon;return <button key={n.name} className={`nav-item ${page===n.name?"active":""}`} onClick={()=>go(n.name)}><Icon size={17}/><span>{n.name}</span>{n.name==="Puzzles"&&<span className="nav-dot"/>}</button>;})}</div>)}
     </div>
