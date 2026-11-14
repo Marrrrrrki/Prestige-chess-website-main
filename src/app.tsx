@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import {
   Activity, Award, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight,
@@ -47,9 +47,80 @@ export default function App(){
   const [profileName,setProfileName]=useState(store.username);
   const [engineStatus,setEngineStatus]=useState("Not connected");
   const [practiceMode,setPracticeMode]=useState<"local"|"engine">("local");
+  const [engineReady,setEngineReady]=useState(false);
+  const [engineThinking,setEngineThinking]=useState(false);
+  const [engineDifficulty,setEngineDifficulty]=useState<"casual"|"club"|"advanced">("club");
+  const engineRef=useRef<Worker|null>(null);
+  const gameRef=useRef(game);
+  gameRef.current=game;
 
   useEffect(()=>{localStorage.setItem(KEY,JSON.stringify(store));},[store]);
   useEffect(()=>{if(!toast)return;const t=window.setTimeout(()=>setToast(""),2600);return()=>clearTimeout(t);},[toast]);
+
+  // Stockfish runs locally in a browser worker; the page stays responsive while it thinks.
+  useEffect(()=>{
+    if(practiceMode!=="engine"){
+      engineRef.current?.terminate();
+      engineRef.current=null;
+      setEngineReady(false);
+      setEngineThinking(false);
+      setEngineStatus("Not connected");
+      return;
+    }
+    setEngineReady(false);
+    setEngineThinking(false);
+    setEngineStatus("Loading Stockfish…");
+    let alive=true;
+    try{
+      const worker=new Worker(`${import.meta.env.BASE_URL}stockfish-worker.js`);
+      engineRef.current=worker;
+      worker.onmessage=(event:MessageEvent<string>)=>{
+        if(!alive)return;
+        const line=String(event.data??"");
+        if(line==="uciok"){
+          worker.postMessage("isready");
+        }else if(line==="readyok"){
+          setEngineReady(true);
+          setEngineStatus("Ready · Stockfish 19");
+        }else if(line.startsWith("bestmove ")){
+          const move=line.split(/\s+/)[1];
+          if(move&&move!=="(none)"&&move!=="0000"){
+            const from=move.slice(0,2),to=move.slice(2,4),promotion=move[4]||"q";
+            const copy=new Chess(gameRef.current.fen());
+            try{
+              const played=copy.move({from,to,promotion});
+              if(played){setGame(copy);setLastMove({from,to});}
+            }catch{/* Ignore malformed engine output rather than corrupting the game. */}
+          }
+          setEngineThinking(false);
+          setEngineStatus("Ready · Stockfish 19");
+        }
+      };
+      worker.onerror=()=>{
+        if(!alive)return;
+        setEngineStatus("Could not load Stockfish");
+        setEngineThinking(false);
+        setEngineReady(false);
+        notify("Stockfish couldn't load. Check your internet connection and try again.");
+      };
+      worker.postMessage("uci");
+    }catch{
+      setEngineStatus("Could not start Stockfish");
+      notify("Your browser couldn't start the Stockfish worker.");
+    }
+    return ()=>{alive=false;engineRef.current?.terminate();engineRef.current=null;};
+  },[practiceMode]);
+
+  useEffect(()=>{
+    if(practiceMode!=="engine"||!engineReady||engineThinking||game.turn()!=="b"||game.isGameOver())return;
+    const worker=engineRef.current;
+    if(!worker)return;
+    setEngineThinking(true);
+    setEngineStatus("Stockfish is thinking…");
+    const moveTime=engineDifficulty==="casual"?250:engineDifficulty==="club"?850:1800;
+    worker.postMessage(`position fen ${game.fen()}`);
+    worker.postMessage(`go movetime ${moveTime}`);
+  },[practiceMode,engineReady,engineThinking,engineDifficulty,game]);
   const notify=(s:string)=>setToast(s);
   const gain=(amount:number,reason:string)=>{setStore(s=>({...s,xp:s.xp+amount}));notify(`+${amount} XP · ${reason}`);};
   const completedCount=store.completed.length;
@@ -126,7 +197,7 @@ export default function App(){
 
         {page==="Puzzles"&&<section><div className="page-title"><div className="eyebrow">TACTICAL TRAINING</div><h1>Puzzle room</h1><p>Find the strongest move. Calculate carefully, then commit.</p></div><div className="puzzle-layout"><div className="panel puzzle-board-panel"><div className="puzzle-top"><div><span className="tag">BEGINNER</span><span className="muted-text"> DAILY PRACTICE</span></div><span className="gold-text">+25 XP</span></div><div className="puzzle-board-wrap"><Board game={game} onMove={(f,t,p)=>{makeMove(f,t,p);if(f==="f3"&&t==="e5"){setPuzzleSolved(true);setStore(s=>({...s,puzzles:s.puzzles+1,xp:s.xp+25}));notify("Puzzle solved · +25 XP");}}} lastMove={lastMove}/></div><div className="board-controls"><button className="btn btn-quiet" onClick={puzzleSetup}> <Activity size={15}/> Reset</button><button className="btn btn-quiet" onClick={()=>setPuzzleHint(true)}> <CircleHelp size={15}/> Hint</button><button className="btn btn-gold" onClick={()=>{setPuzzleIndex(i=>i+1);notify("New training position loaded.");}}>Next exercise <ChevronRight size={15}/></button></div></div><div className="panel puzzle-info"><div className="eyebrow">YOUR OBJECTIVE</div><h2>Find a developing move.</h2><p>This training position is from the opening phase. Look for a move that develops a piece toward the centre and creates a useful threat.</p>{puzzleHint&&<div className="hint-box"><Sparkles size={16}/> Look at your knight on f3. Can it move toward the central e5 square?</div>}{puzzleSolved?<div className="success-box"><Check size={18}/><div><b>Nice work.</b><p>You found the intended developing move. Keep looking for active squares.</p></div></div>:<div className="hint-box"><Target size={16}/> White to move. Choose a purposeful developing move.</div>}<div className="puzzle-meta"><div><span>Difficulty</span><b>Beginner</b></div><div><span>Reward</span><b>25 XP</b></div><div><span>Position</span><b>Opening</b></div></div><p className="fine-print">Training note: this is a guided opening exercise, not a curated tactical database puzzle.</p></div></div></section>}
 
-        {page==="Practice"&&<section><div className="page-title"><div className="eyebrow">THE PLAYING HALL</div><h1>Practice board</h1><p>Play a game locally, explore legal moves and review your position.</p></div><div className="practice-layout"><div className="panel practice-board-panel"><div className="player-strip"><div className="avatar">P</div><div><b>{practiceMode==="local"?"Black · Local player":"Black · Engine unavailable"}</b><span>{game.turn()==="b"?"To move":"Waiting"}</span></div><span className="tag">BLACK</span></div><Board game={game} onMove={makeMove} lastMove={lastMove}/><div className="player-strip bottom-player"><div className="avatar gold-avatar">{store.username.slice(0,1).toUpperCase()}</div><div><b>{store.username}</b><span>{game.turn()==="w"?"Your move":"Waiting"}</span></div><span className="tag gold-tag">WHITE</span></div><div className="board-controls"><button className="btn btn-quiet" onClick={undo} disabled={game.history().length===0}><ChevronLeft size={15}/> Undo</button><button className="btn btn-quiet" onClick={resetGame}>New game</button><button className="btn btn-quiet" onClick={()=>navigator.clipboard?.writeText(game.fen()).then(()=>notify("FEN copied."))}>Copy FEN</button></div></div><div className="practice-side"><div className="panel"><div className="eyebrow">GAME STATUS</div><h3>{game.isCheckmate()?"Checkmate":game.isDraw()?"Draw":game.isCheck()?`${pieceText(game.turn())} is in check`:`${pieceText(game.turn())} to move`}</h3><p className="muted-text">{game.isGameOver()?"The game has ended. Start a new game to continue.":"Select a piece, then choose a highlighted destination square. Illegal moves are rejected."}</p><div className="move-list">{game.history().length?game.history().map((m,i)=><span key={i} className="move-chip">{Math.floor(i/2)+1}{i%2===0?".": "..."} {m}</span>):<span className="muted-text">No moves played yet.</span>}</div></div><div className="panel"><div className="eyebrow">PLAY MODE</div><div className="mode-option active"><Swords size={17}/><div><b>Local two-player</b><span>Play both sides on this device.</span></div><Check size={16}/></div><div className="mode-option disabled"><Brain size={17}/><div><b>Play against Stockfish</b><span>Engine integration not configured in this build.</span></div><span className="soon">UNAVAILABLE</span></div><p className="fine-print">PRESTIGE does not invent engine moves or evaluations. A Stockfish binary and worker must be configured to enable computer opponents.</p></div></div></div></section>}
+        {page==="Practice"&&<section><div className="page-title"><div className="eyebrow">THE PLAYING HALL</div><h1>Practice board</h1><p>Play a friend locally or challenge Stockfish, the chess engine.</p></div><div className="practice-mode-bar"><button className={`btn ${practiceMode==="local"?"btn-gold":"btn-quiet"}`} onClick={()=>{setPracticeMode("local");resetGame();}}><Swords size={15}/> Local two-player</button><button className={`btn ${practiceMode==="engine"?"btn-gold":"btn-quiet"}`} onClick={()=>{setPracticeMode("engine");resetGame();}}><Brain size={15}/> VS. STOCKFISH</button>{practiceMode==="engine"&&<label className="engine-level">Difficulty <select value={engineDifficulty} onChange={e=>setEngineDifficulty(e.target.value as "casual"|"club"|"advanced")}><option value="casual">Casual</option><option value="club">Club</option><option value="advanced">Advanced</option></select></label>}</div><div className="practice-layout"><div className="panel practice-board-panel"><div className="player-strip"><div className="avatar">{practiceMode==="engine"?<Brain size={16}/>:"B"}</div><div><b>{practiceMode==="local"?"Black · Local player":"Stockfish 19"}</b><span>{practiceMode==="engine"?(engineThinking?"Thinking…":engineReady?"Engine ready":"Connecting…"):(game.turn()==="b"?"To move":"Waiting")}</span></div><span className="tag">BLACK</span></div><Board game={game} onMove={makeMove} interactive={practiceMode==="local"||(game.turn()==="w"&&!engineThinking&&!game.isGameOver())} lastMove={lastMove} coordinates={store.boardCoords}/><div className="player-strip bottom-player"><div className="avatar gold-avatar">{store.username.slice(0,1).toUpperCase()}</div><div><b>{store.username}</b><span>{practiceMode==="engine"?(game.turn()==="w"&&!engineThinking?"Your move":"Waiting"):game.turn()==="w"?"White to move":"Waiting"}</span></div><span className="tag gold-tag">WHITE</span></div><div className="board-controls"><button className="btn btn-quiet" onClick={()=>{if(practiceMode==="engine"){const copy=new Chess(game.fen());copy.undo();if(copy.turn()==="b"&&copy.history().length)copy.undo();setGame(copy);const h=copy.history({verbose:true});const m=h[h.length-1];setLastMove(m?{from:m.from,to:m.to}:null);}else undo();}} disabled={game.history().length===0||engineThinking}><ChevronLeft size={15}/> Undo</button><button className="btn btn-quiet" disabled={engineThinking} onClick={()=>{resetGame();setEngineThinking(false);}}>New game</button><button className="btn btn-quiet" onClick={()=>navigator.clipboard?.writeText(game.fen()).then(()=>notify("FEN copied."))}>Copy FEN</button></div></div><div className="practice-side"><div className="panel"><div className="eyebrow">GAME STATUS</div><h3>{game.isCheckmate()?`${pieceText(game.turn()==="w"?"b":"w")} wins by checkmate`:game.isDraw()?"Draw":game.isCheck()?`${pieceText(game.turn())} is in check`:engineThinking?"Stockfish is thinking…":`${pieceText(game.turn())} to move`}</h3><p className="muted-text">{game.isGameOver()?"The game has ended. Start a new game to play again.":practiceMode==="engine"?(engineReady?"You are White. Make your move and Stockfish will reply automatically.":engineStatus):"Select a piece, then choose a highlighted destination square. Illegal moves are rejected."}</p><div className="move-list">{game.history().length?game.history().map((m,i)=><span key={i} className="move-chip">{Math.floor(i/2)+1}{i%2===0?".":"..."} {m}</span>):<span className="muted-text">No moves played yet.</span>}</div></div><div className="panel"><div className="eyebrow">PLAY MODE</div><button className={`mode-option mode-button ${practiceMode==="local"?"chosen":""}`} onClick={()=>{setPracticeMode("local");resetGame();}}><Swords size={17}/><div><b>Local two-player</b><span>Play both sides on this device.</span></div>{practiceMode==="local"&&<Check size={16}/>}</button><button className={`mode-option mode-button ${practiceMode==="engine"?"chosen":""}`} onClick={()=>{setPracticeMode("engine");resetGame();}}><Brain size={17}/><div><b>Play against Stockfish</b><span>Play as White against Stockfish 19.</span></div>{practiceMode==="engine"&&<Check size={16}/>}</button>{practiceMode==="engine"&&<div className="engine-status"><span className={engineReady?"engine-led ready":"engine-led"}/>{engineStatus}</div>}<p className="fine-print">Stockfish runs in your browser. The first launch downloads its small engine files; an internet connection is required.</p></div></div></div></section>}
 
         {page==="Openings"&&<section><div className="page-title"><div className="eyebrow">OPENING REPERTOIRE</div><h1>Opening explorer</h1><p>Learn the first moves and the strategic ideas behind them.</p></div><div className="opening-layout"><div className="panel opening-list"><div className="eyebrow">EXPLORE OPENINGS</div>{openings.map((o,i)=><button key={o.name} className={`opening-item ${i===selectedOpening?"selected":""}`} onClick={()=>setSelectedOpening(i)}><div><b>{o.name}</b><span>{o.category} · {o.eco}</span></div><ChevronRight size={16}/></button>)}</div><div className="panel opening-detail"><div className="opening-detail-head"><div><span className="tag">{activeOpening.category}</span><span className="eco">{activeOpening.eco}</span><h2>{activeOpening.name}</h2><p>{activeOpening.detail}</p></div><button className={`save-btn ${savedOpenings.includes(activeOpening.name)?"saved":""}`} onClick={()=>setStore(s=>({...s,saved:s.saved.includes(activeOpening.name)?s.saved.filter(x=>x!==activeOpening.name):[...s.saved,activeOpening.name]}))}><Bookmark size={16}/>{savedOpenings.includes(activeOpening.name)?"Saved":"Save opening"}</button></div><div className="opening-board"><Board game={openingGame} interactive={false}/></div><div className="move-sequence"><div className="eyebrow">MAIN LINE</div>{activeOpening.moves.map((m,i)=><span key={i}>{i%2===0?`${Math.floor(i/2)+1}.`:""} {m}</span>)}</div><div className="idea-box"><Sparkles size={17}/><div><b>Strategic idea</b><p>{activeOpening.idea}</p></div></div></div></div></section>}
 
