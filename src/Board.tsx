@@ -130,11 +130,10 @@ export default function Board({
 
             const animationStyle = shouldAnimate
               ? ({
-                  "--move-x": moveFromCol - moveToCol,
-                  "--move-y": moveFromRow - moveToRow
+                  "--move-x": `${(moveFromCol - moveToCol) * 100}%`,
+                  "--move-y": `${(moveFromRow - moveToRow) * 100}%`
                 } as CSSProperties)
               : undefined;
-
             return (
               <button
                 type="button"
