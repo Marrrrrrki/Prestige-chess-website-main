@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Board from "./Board";
 import { articles, courses, openings } from "./data";
+import { choosePrestigeMove } from "./prestige-engine";
 
 type Page = "Dashboard"|"Learn"|"Puzzles"|"Practice"|"Openings"|"Analysis"|"Library"|"Leaderboards"|"Profile"|"Settings";
 type Store = { username:string; xp:number; completed:string[]; puzzles:number; streak:number; lastVisit:string; saved:string[]; goal:number; light:boolean; boardCoords:boolean };
